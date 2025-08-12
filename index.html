@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tech Tree — Example</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#60a5fa;--muted:#94a3b8;--good:#34d399}
+    *{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{margin:0;background:linear-gradient(180deg,#071025 0%, #071726 100%);color:#e6eef6}
+    .wrap{max-width:1000px;margin:32px auto;padding:20px}
+    header h1{margin:0 0 8px;font-size:22px}
+    header p{margin:0;color:var(--muted)}
+
+    .canvas{position:relative;height:640px;border-radius:10px;background:rgba(255,255,255,0.02);overflow:hidden;margin-top:18px}
+    /* svg connectors fill the canvas */
+    .connector-svg{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+
+    .node{position:absolute;min-width:140px;padding:10px 12px;border-radius:8px;background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
+    .node.locked{opacity:0.45;filter:grayscale(.2)}
+    .node.unlocked{border-color:rgba(52,211,153,0.18);box-shadow:0 6px 18px rgba(52,211,153,0.06);}
+    .node:hover{transform:translateY(-6px)}
+
+    .node .title{font-weight:600;font-size:14px;margin-bottom:6px}
+    .node .meta{font-size:12px;color:var(--muted)}
+    .node .cost{font-weight:700;color:var(--accent);float:right}
+
+    .controls{display:flex;gap:8px;margin-top:14px}
+    .btn{background:var(--card);border:1px solid rgba(255,255,255,0.04);padding:8px 12px;border-radius:8px;color:inherit;cursor:pointer}
+
+    .legend{margin-top:12px;color:var(--muted);font-size:13px}
+    .legend b{color:#fff}
+
+    /* tooltip */
+    .tooltip{position:fixed;pointer-events:none;padding:8px 10px;background:#051024;border-radius:6px;border:1px solid rgba(255,255,255,0.04);font-size:13px;color:var(--muted);box-shadow:0 6px 24px rgba(2,6,23,0.6)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Tech Tree — Example</h1>
+      <p>A simple interactive tech tree demo using HTML, CSS and JavaScript. Click nodes to toggle unlocked state. Lines show prerequisites.</p>
+    </header>
+
+    <div class="controls">
+      <button class="btn" id="resetBtn">Reset</button>
+      <button class="btn" id="unlockAllBtn">Unlock All</button>
+      <div style="flex:1"></div>
+      <div class="legend">Locked nodes are dimmed. <b>Click</b> a node to unlock if prerequisites are satisfied.</div>
+    </div>
+
+    <div class="canvas" id="canvas">
+      <svg class="connector-svg" id="svg"></svg>
+    </div>
+  </div>
+
+  <div id="tooltip" class="tooltip" style="display:none"></div>
+
+  <script>
+    // Example tech-tree data
+    // Each node has id, title, description, cost, x/y (percentage positions), prereqs (array of ids)
+    const nodes = [
+      {id:'basic_aircraft', title:'Basic Aircraft', desc:'Foundational airframe tech. Allows light fighters and trainers.', cost:50, x:20, y:15, prereqs:[]},
+      {id:'radar', title:'Radar Systems', desc:'Early warning and targeting improvements. Unlocks guided weapons.', cost:80, x:50, y:10, prereqs:['basic_aircraft']},
+      {id:'jet_engines', title:'Jet Engines', desc:'High-speed propulsion technology enabling fast jet designs.', cost:120, x:80, y:18, prereqs:['basic_aircraft']},
+
+      {id:'fighters', title:'Modern Fighters', desc:'Multirole jet fighters for air superiority and strike.', cost:200, x:70, y:45, prereqs:['jet_engines','radar']},
+      {id:'transport', title:'Strategic Transport', desc:'Heavy-lift aircraft for global mobility and humanitarian ops.', cost:150, x:30, y:45, prereqs:['basic_aircraft']},
+
+      {id:'stealth', title:'Stealth Design', desc:'Reduced radar cross-section and signature management.', cost:300, x:50, y:70, prereqs:['fighters']},
+      {id:'avionics', title:'Advanced Avionics', desc:'Integrated sensors, datalinks and AI-assisted targeting.', cost:220, x:85, y:70, prereqs:['radar','fighters']},
+      {id:'air_refuel', title:'Aerial Refuelling', desc:'Extend range of combat and transport aircraft.', cost:180, x:15, y:75, prereqs:['transport']}
+    ];
+
+    // Track unlocked state
+    const unlocked = new Set();
+
+    const canvas = document.getElementById('canvas');
+    const svg = document.getElementById('svg');
+    const tooltip = document.getElementById('tooltip');
+
+    function pctToPx(pct, dim){
+      // pct 0..100, dim pixels
+      return Math.round(pct/100 * dim);
+    }
+
+    function render() {
+      // clear canvas elements except svg
+      Array.from(canvas.querySelectorAll('.node')).forEach(n=>n.remove());
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+      const rect = canvas.getBoundingClientRect();
+
+      // draw connectors (lines from prereq -> node)
+      function drawLine(from, to){
+        const line = document.createElementNS('http://www.w3.org/2000/svg','path');
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        // simple cubic bezier for nicer curves
+        const cp1x = from.x + dx*0.35;
+        const cp1y = from.y;
+        const cp2x = to.x - dx*0.35;
+        const cp2y = to.y;
+        const d = `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`;
+        line.setAttribute('d', d);
+        line.setAttribute('fill','none');
+        // style: if all prereqs for target unlocked then bright
+        const prereqsMet = to.prereqs.every(p=>unlocked.has(p));
+        line.setAttribute('stroke', prereqsMet ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.06)');
+        line.setAttribute('stroke-width', prereqsMet ? '3' : '1.6');
+        line.setAttribute('stroke-linecap','round');
+        svg.appendChild(line);
+      }
+
+      // precompute pixel positions for nodes
+      const nodePositions = {};
+      nodes.forEach(n=>{
+        const x = pctToPx(n.x, rect.width);
+        const y = pctToPx(n.y, rect.height);
+        nodePositions[n.id] = {x,y};
+      });
+
+      // draw all lines first (under nodes)
+      nodes.forEach(n=>{
+        n.prereqs.forEach(pid=>{
+          const from = nodePositions[pid];
+          const to = nodePositions[n.id];
+          if(from && to) drawLine({x:from.x+70,y:from.y+40,prereqs:[]},{x:to.x+70,y:to.y+20,prereqs:n.prereqs});
+        });
+      });
+
+      // draw nodes
+      nodes.forEach(n=>{
+        const el = document.createElement('div');
+        el.className = 'node';
+        if(!unlocked.has(n.id)) el.classList.add('locked'); else el.classList.add('unlocked');
+        el.style.left = `calc(${n.x}% - 70px)`; // center by node width
+        el.style.top = `calc(${n.y}% - 24px)`;
+        el.dataset.id = n.id;
+        el.innerHTML = `<div class="title">${n.title} <span class="cost">${n.cost}</span></div><div class="meta">${n.desc}</div>`;
+
+        // click handler: attempt unlock
+        el.addEventListener('click', (ev)=>{
+          ev.stopPropagation();
+          const canUnlock = n.prereqs.every(p=>unlocked.has(p));
+          if(unlocked.has(n.id)){
+            unlocked.delete(n.id); // toggle off
+          } else if(canUnlock){
+            unlocked.add(n.id);
+          } else {
+            // briefly shake to signal cannot unlock
+            el.animate([{transform:'translateX(-6px)'},{transform:'translateX(6px)'},{transform:'translateX(0)'}],{duration:260});
+          }
+          render();
+        });
+
+        // tooltip
+        el.addEventListener('mouseenter', (e)=>{
+          tooltip.style.display = 'block';
+          tooltip.innerHTML = `<strong>${n.title}</strong><br>${n.desc}<br><small>Cost: ${n.cost}</small>`;
+        });
+        el.addEventListener('mouseleave', ()=>{tooltip.style.display='none'});
+        el.addEventListener('mousemove', (e)=>{
+          const pad = 12;
+          tooltip.style.left = (e.clientX + pad) + 'px';
+          tooltip.style.top = (e.clientY + pad) + 'px';
+        });
+
+        canvas.appendChild(el);
+      });
+    }
+
+    // controls
+    document.getElementById('resetBtn').addEventListener('click',()=>{unlocked.clear();render();});
+    document.getElementById('unlockAllBtn').addEventListener('click',()=>{nodes.forEach(n=>unlocked.add(n.id));render();});
+
+    // initial unlock some basics
+    unlocked.add('basic_aircraft');
+    // initial render on load and on resize
+    window.addEventListener('resize',()=>render());
+    render();
+
+    // click outside to hide tooltip
+    document.addEventListener('click', ()=>{tooltip.style.display='none'});
+
+  </script>
+</body>
+</html>
