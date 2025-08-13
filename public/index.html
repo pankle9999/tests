@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tech Tree</title>
+  <style>
+    body { 
+      font-family: Arial, sans-serif; 
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 20px;
+    }
+    #currency { 
+      font-size: 18px; 
+      margin-bottom: 20px; 
+      font-weight: bold; 
+    }
+    .node { 
+      border: 1px solid #ccc; 
+      padding: 10px; 
+      margin: 20px; 
+      display: inline-block; 
+      width: 150px; 
+      text-align: center; 
+      border-radius: 8px;
+    }
+    .locked { background-color: #f8d7da; }
+    .unlocked { background-color: #d4edda; }
+    button {
+      margin-top: 10px;
+      padding: 5px 10px;
+      border: none;
+      background-color: #007bff;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div id="currency"></div>
+  <div id="tree"></div>
+  
+  <script>
+    let currency = 500;
+    let unlocked = new Set(['basic_aircraft']);
+
+    const techTree = {
+      basic_aircraft: { name: 'Basic Aircraft', cost: 100, requires: [] },
+      fighter_jet: { name: 'Fighter Jet', cost: 200, requires: ['basic_aircraft'] },
+      stealth_bomber: { name: 'Stealth Bomber', cost: 500, requires: ['fighter_jet'] }
+    };
+
+    function render() {
+      document.getElementById('currency').innerText = `Currency: ${currency}`;
+      const treeDiv = document.getElementById('tree');
+      treeDiv.innerHTML = '';
+
+      for (const [id, node] of Object.entries(techTree)) {
+        const div = document.createElement('div');
+        div.className = 'node ' + (unlocked.has(id) ? 'unlocked' : 'locked');
+        div.innerHTML = `<strong>${node.name}</strong><br>Cost: ${node.cost}`;
+        
+        if (!unlocked.has(id)) {
+          const canUnlock = node.requires.every(req => unlocked.has(req));
+          if (canUnlock) {
+            const btn = document.createElement('button');
+            btn.innerText = 'Unlock';
+            btn.onclick = () => {
+              if (currency >= node.cost) {
+                currency -= node.cost;
+                unlocked.add(id);
+                render();
+              } else {
+                alert('Not enough currency!');
+              }
+            };
+            div.appendChild(btn);
+          }
+        }
+        treeDiv.appendChild(div);
+      }
+    }
+
+    render();
+  </script>
+</body>
+</html>
